@@ -1,0 +1,21 @@
+/*
+Site theme override layer.
+
+Keep site-specific UI changes here so upstream Lobsters CSS can be updated
+without replacing local branding. Prefer CSS custom properties over template
+changes whenever possible.
+*/
+
+:root {
+	--site-accent: 34 94 168;
+	--site-accent-contrast: 255 255 255;
+	--color-fg-link: rgb(var(--site-accent));
+}
+
+header#nav {
+	border-top: 3px solid rgb(var(--site-accent));
+}
+
+header#nav a#logo {
+	background-color: rgb(var(--site-accent));
+}

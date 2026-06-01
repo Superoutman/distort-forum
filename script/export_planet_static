@@ -1,0 +1,94 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "erb"
+require "fileutils"
+require "json"
+
+require_relative "../config/environment"
+
+include ERB::Util
+
+out_dir = ENV.fetch("PLANET_EXPORT_DIR", "planet-public")
+forum_url = "https://#{Rails.application.domain}"
+site_name = Rails.application.name
+description = Rails.application.og_description
+
+stories = begin
+  Story.not_deleted(nil)
+    .unmerged
+    .includes(:user, :tags)
+    .order(created_at: :desc)
+    .limit(Integer(ENV.fetch("PLANET_STORY_LIMIT", "25")))
+    .to_a
+rescue ActiveRecord::ActiveRecordError => e
+  warn "Could not load stories: #{e.message}"
+  []
+end
+
+FileUtils.mkdir_p(out_dir)
+
+story_rows = stories.map do |story|
+  href = "#{forum_url}/s/#{story.short_id}/#{story.title_as_slug}"
+  tags = story.tags.map(&:tag).join(", ")
+  <<~HTML
+    <article>
+      <h2><a href="#{h href}">#{h story.title}</a></h2>
+      <p>#{h story.created_at.utc.strftime("%Y-%m-%d")} · #{h story.user.username}#{tags.empty? ? "" : " · #{h tags}"}</p>
+    </article>
+  HTML
+end.join("\n")
+
+html = <<~HTML
+  <!doctype html>
+  <html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>#{h site_name}</title>
+    <style>
+      :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { margin: 0; line-height: 1.6; }
+      main { max-width: 760px; margin: 0 auto; padding: 48px 20px; }
+      header { margin-bottom: 36px; }
+      h1 { font-size: 2rem; margin: 0 0 12px; }
+      h2 { font-size: 1.1rem; margin: 0; }
+      p { color: color-mix(in srgb, currentColor 72%, transparent); }
+      a { color: #225ea8; }
+      .button { display: inline-block; margin-top: 12px; padding: 10px 14px; background: #225ea8; color: white; text-decoration: none; border-radius: 6px; }
+      article { border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); padding: 18px 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>#{h site_name}</h1>
+        <p>#{h description}</p>
+        <a class="button" href="#{h forum_url}">进入论坛</a>
+      </header>
+      <section>
+        <h2>最新公开帖子</h2>
+        #{story_rows.empty? ? "<p>还没有可导出的公开帖子。</p>" : story_rows}
+      </section>
+    </main>
+  </body>
+  </html>
+HTML
+
+File.write(File.join(out_dir, "index.html"), html)
+File.write(File.join(out_dir, "feed.json"), JSON.pretty_generate({
+  site: site_name,
+  forum_url: forum_url,
+  generated_at: Time.now.utc.iso8601,
+  stories: stories.map { |story|
+    {
+      title: story.title,
+      url: "#{forum_url}/s/#{story.short_id}/#{story.title_as_slug}",
+      created_at: story.created_at.utc.iso8601,
+      user: story.user.username,
+      tags: story.tags.map(&:tag)
+    }
+  }
+}))
+
+puts "Exported #{stories.size} stories to #{out_dir}"

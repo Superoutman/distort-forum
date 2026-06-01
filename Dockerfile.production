@@ -1,0 +1,31 @@
+FROM ruby:4.0.0
+
+ENV RAILS_ENV=production \
+  RACK_ENV=production
+
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+  build-essential \
+  curl \
+  libjemalloc2 \
+  libvips \
+  mariadb-client \
+  pkg-config \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /lobsters
+
+COPY Gemfile Gemfile.lock .ruby-version ./
+RUN gem install bundler \
+  && bundle lock --add-platform aarch64-linux \
+  && bundle config set deployment true \
+  && bundle config set without "development test" \
+  && bundle install
+
+COPY . .
+RUN cp config/database.yml.sample config/database.yml \
+  && chmod +x docker/entrypoint.sh docker/cron.sh script/backup_mariadb script/restore_mariadb script/export_planet_static
+
+EXPOSE 3000
+
+ENTRYPOINT ["docker/entrypoint.sh"]
+CMD ["web"]

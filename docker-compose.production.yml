@@ -1,0 +1,118 @@
+name: lobsters-forum
+
+x-app-env: &app-env
+  RAILS_ENV: production
+  RACK_ENV: production
+  RAILS_LOG_TO_STDOUT: "true"
+  RAILS_SERVE_STATIC_FILES: "true"
+  PORT: "3000"
+  DATABASE_HOST: db
+  DATABASE_URL: trilogy://lobsters:${MARIADB_PASSWORD}@db:3306/lobsters
+  MARIADB_USER: lobsters
+  MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+  SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+  SITE_DOMAIN: ${SITE_DOMAIN}
+  SITE_NAME: ${SITE_NAME}
+  SITE_DESCRIPTION: ${SITE_DESCRIPTION}
+  OPEN_SIGNUPS: ${OPEN_SIGNUPS:-false}
+  ALLOW_INVITATION_REQUESTS: ${ALLOW_INVITATION_REQUESTS:-false}
+  ALLOW_NEW_USERS_TO_INVITE: ${ALLOW_NEW_USERS_TO_INVITE:-true}
+  SMTP_HOST: ${SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USERNAME: ${SMTP_USERNAME}
+  SMTP_PASSWORD: ${SMTP_PASSWORD}
+  SMTP_STARTTLS_AUTO: ${SMTP_STARTTLS_AUTO:-true}
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./planet-public:/lobsters/planet-public
+      - app_storage:/lobsters/storage
+      - app_log:/lobsters/log
+      - public_cache:/lobsters/public/cache
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    restart: unless-stopped
+    command: ["worker"]
+    env_file:
+      - .env.production
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - app_storage:/lobsters/storage
+      - app_log:/lobsters/log
+      - public_cache:/lobsters/public/cache
+
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    restart: unless-stopped
+    command: ["cron"]
+    env_file:
+      - .env.production
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - app_storage:/lobsters/storage
+      - app_log:/lobsters/log
+      - public_cache:/lobsters/public/cache
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_DATABASE: lobsters
+      MARIADB_USER: lobsters
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -uroot -p$${MARIADB_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - db_data:/var/lib/mysql
+
+volumes:
+  app_log:
+  app_storage:
+  caddy_config:
+  caddy_data:
+  db_data:
+  public_cache:

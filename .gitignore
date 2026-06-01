@@ -26,6 +26,8 @@ vendor/bundle
 # compiled output
 coverage/
 public/assets
+backups/
+planet-public/
 
 # cache
 public/avatars
